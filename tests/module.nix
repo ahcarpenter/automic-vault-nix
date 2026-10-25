@@ -92,7 +92,10 @@ let
   syncArgs = config: config.programs.automic-vault.homebrew.syncArgs;
   failedAssertions = config: map (a: a.message) (lib.filter (a: !a.assertion) config.assertions);
   rosettaRefused =
-    config: lib.any (lib.hasInfix "nix-homebrew.enableRosetta") (failedAssertions config);
+    config:
+    lib.any (lib.hasPrefix "programs.automic-vault.homebrew.hardened cannot be combined with nix-homebrew's\n/usr/local prefix") (
+      failedAssertions config
+    );
 
   expectedInstallTargets =
     config:
@@ -289,7 +292,7 @@ pkgs.runCommand "automic-vault-module"
       "hardenedScript"
     ];
     # The snippets the module adds, with enough of nix-darwin's activation
-    # around them to lint them as one script.
+    # around them to lint each as one script.
     enabledScript = ''
       #!/usr/bin/env bash
       set -e
@@ -305,9 +308,7 @@ pkgs.runCommand "automic-vault-module"
     brewSync = brewSyncIn hardened;
   }
   ''
-    bash -n "$enabledScriptPath"
-    bash -n "$hardenedScriptPath"
-    bash -n "$brewSync/bin/brew-sync"
+    shellcheck --severity=warning --exclude=SC1112 "$enabledScriptPath" "$hardenedScriptPath" "$brewSync/bin/brew-sync"
 
     echo "${toString (lib.length cases)} module tests passed"
     touch $out

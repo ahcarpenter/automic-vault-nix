@@ -56,9 +56,18 @@ let
     in
     "${lib.optionalString trusted "trusted-"}${kind}:${entry.name}";
 
+  checkHardened = lib.getExe (pkgs.callPackage ./check-hardened.nix { });
+
   brewSync = pkgs.callPackage ./brew-sync.nix { };
   brewSyncCommand = pkgs.writeShellScriptBin "brew-sync" ''
     exec ${lib.getExe brewSync} ${lib.escapeShellArgs cfg.homebrew.syncArgs}
+  '';
+
+  rosettaConflict = ''
+    programs.automic-vault.homebrew.hardened cannot be combined with nix-homebrew's
+    /usr/local prefix (nix-homebrew.enableRosetta, or an Intel Mac): it would put
+    Homebrew's brew at /usr/local/bin/brew, where the guarded brew lives, and hand
+    /usr/local/bin, which must stay root-owned, to automic:vault.
   '';
 
   # What nix-darwin's Homebrew step installs that brew-sync does not.
@@ -126,10 +135,11 @@ in
           approval per command, two for trusted items. Run it as yourself
           after each switch. It installs by name and never upgrades or
           removes anything.
-        - nix-homebrew's {option}`nix-homebrew.enableRosetta` must be off:
-          its {file}`/usr/local` prefix would put Homebrew's {command}`brew`
-          where the guarded one lives and hand {file}`/usr/local/bin`, which
-          must stay root-owned, to `automic:vault`.
+        - nix-homebrew's {file}`/usr/local` prefix, which
+          {option}`nix-homebrew.enableRosetta` or an Intel Mac turns on, must
+          be off: it would put Homebrew's {command}`brew` where the guarded
+          one lives and hand {file}`/usr/local/bin`, which must stay
+          root-owned, to `automic:vault`.
         - {file}`/usr/local/bin` and then Homebrew's own {file}`bin` and
           {file}`sbin` come first in {env}`PATH`, in place of
           {command}`brew shellenv`.
@@ -204,12 +214,7 @@ in
       lib.mkMerge [
         {
           system.checks.text = ''
-            if ! /usr/bin/dscl . -read /Users/automic UniqueID >/dev/null 2>&1 \
-              || ! /usr/bin/dscl . -read /Groups/vault PrimaryGroupID >/dev/null 2>&1; then
-              printf >&2 '\e[1;31merror: programs.automic-vault.homebrew.hardened is set, but there is no automic user or vault group\e[0m\n'
-              printf >&2 'Run `av harden brew` first, or set it to false.\n'
-              exit 2
-            fi
+            ${checkHardened} automic vault
           '';
 
           homebrew.enable = lib.mkForce false;
@@ -231,13 +236,9 @@ in
         (lib.optionalAttrs hasNixHomebrew {
           assertions = [
             {
-              assertion = !(config.nix-homebrew.enable && config.nix-homebrew.enableRosetta);
-              message = ''
-                programs.automic-vault.homebrew.hardened cannot be combined with
-                nix-homebrew.enableRosetta: its /usr/local prefix would put Homebrew's
-                brew at /usr/local/bin/brew, where the guarded brew lives, and hand
-                /usr/local/bin, which must stay root-owned, to automic:vault.
-              '';
+              assertion =
+                !(config.nix-homebrew.enable && (config.nix-homebrew.prefixes."/usr/local".enable or false));
+              message = rosettaConflict;
             }
           ];
 

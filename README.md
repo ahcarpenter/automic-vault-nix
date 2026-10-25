@@ -110,10 +110,11 @@ the switch stops if there is no `automic` user or `vault` group. When it is
 - [nix-homebrew](https://github.com/zhaofengli/nix-homebrew), if imported,
   sets up the Homebrew prefix as Automic Vault's `automic` user and `vault`
   group from the start, so nothing changes ownership afterwards. Its
-  `brew shellenv` shell hooks are turned off. Its `enableRosetta` must be off:
-  the `/usr/local` prefix it adds would put Homebrew's `brew` where the guarded
-  one lives and hand `/usr/local/bin`, which must stay root-owned, to
-  `automic:vault`, so evaluation fails if both are set.
+  `brew shellenv` shell hooks are turned off. Its `/usr/local` prefix, which
+  `enableRosetta` or an Intel Mac turns on, must be off: it would put
+  Homebrew's `brew` where the guarded one lives and hand `/usr/local/bin`,
+  which must stay root-owned, to `automic:vault`, so evaluation fails if both
+  are set.
 - nix-darwin's own Homebrew module is turned off rather than overridden,
   because hardened Homebrew refuses `brew bundle` and root.
 - A `brew-sync` command installs whatever is missing from `homebrew.taps`,
@@ -171,12 +172,15 @@ not update that copy; the nix-darwin module does.
   directory that is not root-owned and a CLI that is not `av` are all refused.
 - `brew-sync`: against a sample prefix and a stand-in `brew`. It covers install
   order, trust, clone URLs, refusals and an up-to-date run.
+- `check-hardened`: the switch-time check for the `automic` user and `vault`
+  group, run with `root` and `wheel`, which every Mac has, and with names no
+  Mac has.
 - `module`: the nix-darwin module evaluated with it off, enabled and hardened,
   with and without nix-homebrew. It checks what each sets, that each system
-  evaluates, and that the snippets it adds to activation parse.
+  evaluates, and that the snippets it adds to activation pass `shellcheck`.
 - `lint`: `nixfmt` and `shellcheck`.
 
-The checks call Apple's `/usr/bin/codesign`, so they need the Nix sandbox off
+The checks call Apple's `/usr/bin/codesign` and `/usr/bin/dscl`, so they need the Nix sandbox off
 or `relaxed` (the default on macOS is off).
 
 Checked by hand on a Mac running Automic Vault 4.20.2:

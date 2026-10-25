@@ -27,7 +27,7 @@ let
         undmg $src
       '';
 
-  # These run Apple's own codesign, which a sandboxed build cannot reach.
+  # These run Apple's own codesign and dscl, which a sandboxed build cannot reach.
   impure = {
     __noChroot = true;
   };
@@ -51,6 +51,13 @@ in
   brew-sync = pkgs.runCommand "brew-sync-test" { } ''
     bash ${./brew-sync.sh} ${
       lib.getExe (pkgs.callPackage ../modules/darwin/automic-vault/brew-sync.nix { })
+    }
+    touch $out
+  '';
+
+  check-hardened = pkgs.runCommand "automic-vault-check-hardened-test" impure ''
+    bash ${./check-hardened.sh} ${
+      lib.getExe (pkgs.callPackage ../modules/darwin/automic-vault/check-hardened.nix { })
     }
     touch $out
   '';
