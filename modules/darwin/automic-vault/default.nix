@@ -18,13 +18,14 @@ let
   # change Homebrew.
   brewStub = "/usr/local/bin/brew";
 
-  sourceApp = lib.escapeShellArg "${cfg.package}/Applications/Automic Vault.app";
+  sourceApp = "${cfg.package}/Applications/Automic Vault.app";
 
   installer = lib.getExe (pkgs.callPackage ./install.nix { });
-  install = action: ''
-    ${installer} ${action} app ${sourceApp} ${lib.escapeShellArg appPath}
-    ${installer} ${action} cli ${sourceApp}/Contents/MacOS/av ${cliPath}
-  '';
+  install =
+    action:
+    lib.concatMapStrings (target: ''
+      ${installer} ${action} ${lib.escapeShellArgs target}
+    '') cfg.installTargets;
 
   hasNixHomebrew = options ? nix-homebrew;
   nixHomebrewPrefix =
@@ -57,18 +58,7 @@ let
 
   brewSync = pkgs.callPackage ./brew-sync.nix { };
   brewSyncCommand = pkgs.writeShellScriptBin "brew-sync" ''
-    exec ${lib.getExe brewSync} ${
-      lib.escapeShellArgs (
-        [
-          brew.prefix
-          brewLibrary
-          brewStub
-        ]
-        ++ map tapItem brew.taps
-        ++ map (packageItem "formula") brew.brews
-        ++ map (packageItem "cask") brew.casks
-      )
-    }
+    exec ${lib.getExe brewSync} ${lib.escapeShellArgs cfg.homebrew.syncArgs}
   '';
 
   # What nix-darwin's Homebrew step installs that brew-sync does not.
@@ -103,6 +93,16 @@ in
 
     package = lib.mkPackageOption pkgs "automic-vault" { };
 
+    installTargets = lib.mkOption {
+      type = lib.types.listOf (lib.types.listOf lib.types.str);
+      internal = true;
+      readOnly = true;
+      description = ''
+        What the checks and activation run the installer on, each as its
+        kind, source and destination.
+      '';
+    };
+
     homebrew.hardened = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -123,16 +123,58 @@ in
         - {command}`brew-sync` installs what is missing from
           {option}`homebrew.taps`, {option}`homebrew.brews` and
           {option}`homebrew.casks` through the guarded {command}`brew`, one
-          approval per item. Run it as yourself after each switch. It
-          installs by name and never upgrades or removes anything.
+          approval per command, two for trusted items. Run it as yourself
+          after each switch. It installs by name and never upgrades or
+          removes anything.
+        - nix-homebrew's {option}`nix-homebrew.enableRosetta` must be off:
+          its {file}`/usr/local` prefix would put Homebrew's {command}`brew`
+          where the guarded one lives and hand {file}`/usr/local/bin`, which
+          must stay root-owned, to `automic:vault`.
         - {file}`/usr/local/bin` and then Homebrew's own {file}`bin` and
           {file}`sbin` come first in {env}`PATH`, in place of
           {command}`brew shellenv`.
       '';
     };
+
+    homebrew.syncArgs = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      internal = true;
+      readOnly = true;
+      description = ''
+        The arguments {command}`brew-sync` passes to the sync script: the
+        prefix, Homebrew's Library, the guarded {command}`brew`, then one
+        item per tap, formula and cask.
+      '';
+    };
   };
 
   config = lib.mkMerge [
+    {
+      programs.automic-vault.installTargets = lib.optionals cfg.enable [
+        [
+          "app"
+          sourceApp
+          appPath
+        ]
+        [
+          "cli"
+          "${sourceApp}/Contents/MacOS/av"
+          cliPath
+        ]
+      ];
+
+      programs.automic-vault.homebrew.syncArgs = lib.optionals cfg.homebrew.hardened (
+        [
+          brew.prefix
+          brewLibrary
+          brewStub
+        ]
+        ++ map tapItem brew.taps
+        ++ map (packageItem "formula") brew.brews
+        ++ map (packageItem "cask") brew.casks
+      );
+    }
+
     (lib.mkIf cfg.enable {
       system.checks.text = install "check";
 
@@ -187,6 +229,18 @@ in
         }
 
         (lib.optionalAttrs hasNixHomebrew {
+          assertions = [
+            {
+              assertion = !(config.nix-homebrew.enable && config.nix-homebrew.enableRosetta);
+              message = ''
+                programs.automic-vault.homebrew.hardened cannot be combined with
+                nix-homebrew.enableRosetta: its /usr/local prefix would put Homebrew's
+                brew at /usr/local/bin/brew, where the guarded brew lives, and hand
+                /usr/local/bin, which must stay root-owned, to automic:vault.
+              '';
+            }
+          ];
+
           nix-homebrew = {
             user = lib.mkForce "automic";
             group = lib.mkForce "vault";

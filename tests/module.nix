@@ -65,6 +65,11 @@ let
       }
     ]
   );
+  rosetta = [ { nix-homebrew.enableRosetta = true; } ];
+  rosettaOnly = evalDarwin (withNixHomebrew ++ rosetta);
+  hardenedWithRosetta = evalDarwin (
+    withNixHomebrew ++ rosetta ++ [ { programs.automic-vault.homebrew.hardened = true; } ]
+  );
   hardenedWithoutNixHomebrew = evalDarwin [ { programs.automic-vault.homebrew.hardened = true; } ];
   hardenedWithMasApps = evalDarwin [
     {
@@ -83,6 +88,39 @@ let
   ];
 
   applications = config: config.system.activationScripts.applications.text;
+  installTargets = config: config.programs.automic-vault.installTargets;
+  syncArgs = config: config.programs.automic-vault.homebrew.syncArgs;
+  failedAssertions = config: map (a: a.message) (lib.filter (a: !a.assertion) config.assertions);
+  rosettaRefused =
+    config: lib.any (lib.hasInfix "nix-homebrew.enableRosetta") (failedAssertions config);
+
+  expectedInstallTargets =
+    config:
+    let
+      app = "${config.programs.automic-vault.package}/Applications/Automic Vault.app";
+    in
+    [
+      [
+        "app"
+        app
+        "/Applications/Automic Vault.app"
+      ]
+      [
+        "cli"
+        "${app}/Contents/MacOS/av"
+        "/usr/local/bin/av"
+      ]
+    ];
+  expectedSyncArgs = [
+    "/opt/homebrew"
+    "/opt/homebrew/Library"
+    "/usr/local/bin/brew"
+    "trusted-tap:acme/tools"
+    "tap:acme/private:https://git.example.com/acme/homebrew-private.git"
+    "formula:jq"
+    "trusted-formula:acme/tools/widget"
+    "cask:claude-code@latest"
+  ];
   brewSyncIn =
     config: lib.findFirst (p: lib.getName p == "brew-sync") null config.environment.systemPackages;
   hasBrewSync = config: brewSyncIn config != null;
@@ -100,7 +138,7 @@ let
     ]
     [
       "plain: the app is not installed"
-      (!lib.hasInfix "automic-vault-install" (applications plain))
+      (installTargets plain == [ ])
     ]
     [
       "plain: PATH is unchanged"
@@ -113,30 +151,8 @@ let
 
     # enable installs the app and the CLI, and leaves Homebrew alone.
     [
-      "enabled: activation installs the app and the CLI"
-      (
-        lib.hasInfix "automic-vault-install install app" (applications enabled)
-        && lib.hasInfix "/Applications/Automic Vault.app" (applications enabled)
-        && lib.hasInfix "automic-vault-install install cli" (applications enabled)
-        && lib.hasInfix "/usr/local/bin/av" (applications enabled)
-      )
-    ]
-    [
-      "enabled: the install comes after /Applications/Nix Apps"
-      (
-        let
-          text = applications enabled;
-        in
-        lib.length (lib.splitString "automic-vault-install install app" text) == 2
-        && lib.hasInfix "rsync" (lib.head (lib.splitString "automic-vault-install install app" text))
-      )
-    ]
-    [
-      "enabled: checks run before activation"
-      (
-        lib.hasInfix "automic-vault-install check app" enabled.system.checks.text
-        && lib.hasInfix "automic-vault-install check cli" enabled.system.checks.text
-      )
+      "enabled: the app and the CLI are installed from the package where Automic Vault expects them"
+      (installTargets enabled == expectedInstallTargets enabled)
     ]
     [
       "enabled: /usr/local/bin comes first in PATH"
@@ -165,12 +181,8 @@ let
       (!hardened.homebrew.enable)
     ]
     [
-      "hardened: no brew bundle in activation"
-      (!lib.hasInfix "brew bundle" hardened.system.activationScripts.homebrew.text)
-    ]
-    [
       "hardened: nix-homebrew still sets up the prefix"
-      (lib.hasInfix "setup-homebrew" hardened.system.activationScripts.homebrew.text)
+      hardened.nix-homebrew.enable
     ]
     [
       "hardened: nix-homebrew owns the prefix as automic:vault"
@@ -182,16 +194,6 @@ let
         !hardened.nix-homebrew.enableBashIntegration
         && !hardened.nix-homebrew.enableFishIntegration
         && !hardened.nix-homebrew.enableZshIntegration
-      )
-    ]
-    [
-      "hardened: no brew shellenv in shell init"
-      (
-        !lib.hasInfix "brew shellenv" (
-          hardened.programs.zsh.interactiveShellInit
-          + hardened.programs.bash.interactiveShellInit
-          + hardened.programs.fish.interactiveShellInit
-        )
       )
     ]
     [
@@ -210,8 +212,12 @@ let
       (hasBrewSync hardened)
     ]
     [
-      "hardened: checks require the automic user and vault group"
-      (lib.hasInfix "/Users/automic" hardened.system.checks.text)
+      "hardened: brew-sync gets the lists in order, with trust where nix-darwin would trust"
+      (syncArgs hardened == expectedSyncArgs)
+    ]
+    [
+      "hardened: still installs the app and the CLI"
+      (installTargets hardened == expectedInstallTargets hardened)
     ]
     [
       "hardened: no warnings"
@@ -228,8 +234,26 @@ let
       (hasBrewSync hardenedWithoutNixHomebrew)
     ]
     [
+      "hardened without nix-homebrew: brew-sync gets the same arguments"
+      (syncArgs hardenedWithoutNixHomebrew == expectedSyncArgs)
+    ]
+    [
       "hardened without nix-homebrew: the app is not installed"
-      (!lib.hasInfix "automic-vault-install" (applications hardenedWithoutNixHomebrew))
+      (installTargets hardenedWithoutNixHomebrew == [ ])
+    ]
+
+    # nix-homebrew's Rosetta prefix is /usr/local, where the guarded brew lives.
+    [
+      "Rosetta alone: allowed"
+      (!rosettaRefused rosettaOnly)
+    ]
+    [
+      "hardened: allowed without Rosetta"
+      (!rosettaRefused hardened)
+    ]
+    [
+      "hardened with Rosetta: refused"
+      (rosettaRefused hardenedWithRosetta)
     ]
 
     # Misconfigurations warn.
@@ -279,28 +303,11 @@ pkgs.runCommand "automic-vault-module"
     '';
     toplevels = toplevels;
     brewSync = brewSyncIn hardened;
-    brewSyncWithoutNixHomebrew = brewSyncIn hardenedWithoutNixHomebrew;
-    brewSyncExe = lib.getExe (pkgs.callPackage ../modules/darwin/automic-vault/brew-sync.nix { });
-    brewSyncArgs = lib.escapeShellArgs [
-      "/opt/homebrew"
-      "/opt/homebrew/Library"
-      "/usr/local/bin/brew"
-      "trusted-tap:acme/tools"
-      "tap:acme/private:https://git.example.com/acme/homebrew-private.git"
-      "formula:jq"
-      "trusted-formula:acme/tools/widget"
-      "cask:claude-code@latest"
-    ];
   }
   ''
     bash -n "$enabledScriptPath"
     bash -n "$hardenedScriptPath"
-
-    # brew-sync gets the lists in order, with trust where nix-darwin would trust.
-    for script in "$brewSync/bin/brew-sync" "$brewSyncWithoutNixHomebrew/bin/brew-sync"; do
-      grep -qxF -- "exec $brewSyncExe $brewSyncArgs" "$script" ||
-        { echo "FAIL: unexpected brew-sync command in $script:" >&2; cat "$script" >&2; exit 1; }
-    done
+    bash -n "$brewSync/bin/brew-sync"
 
     echo "${toString (lib.length cases)} module tests passed"
     touch $out

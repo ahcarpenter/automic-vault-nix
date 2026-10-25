@@ -110,13 +110,16 @@ the switch stops if there is no `automic` user or `vault` group. When it is
 - [nix-homebrew](https://github.com/zhaofengli/nix-homebrew), if imported,
   sets up the Homebrew prefix as Automic Vault's `automic` user and `vault`
   group from the start, so nothing changes ownership afterwards. Its
-  `brew shellenv` shell hooks are turned off.
+  `brew shellenv` shell hooks are turned off. Its `enableRosetta` must be off:
+  the `/usr/local` prefix it adds would put Homebrew's `brew` where the guarded
+  one lives and hand `/usr/local/bin`, which must stay root-owned, to
+  `automic:vault`, so evaluation fails if both are set.
 - nix-darwin's own Homebrew module is turned off rather than overridden,
   because hardened Homebrew refuses `brew bundle` and root.
 - A `brew-sync` command installs whatever is missing from `homebrew.taps`,
   `homebrew.brews` and `homebrew.casks` through the guarded
-  `/usr/local/bin/brew`, one approval per item. Run it as yourself after each
-  switch:
+  `/usr/local/bin/brew`, one approval per command, two for trusted items. Run
+  it as yourself after each switch:
 
   ```sh
   sudo darwin-rebuild switch --flake .#mac && brew-sync
