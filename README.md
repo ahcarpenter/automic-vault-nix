@@ -210,7 +210,6 @@ Checked by hand on a Mac running Automic Vault 4.20.2:
   Security > App Management, as nix-darwin needs for `/Applications/Nix Apps`.
 - `brew-sync` has only run against a stand-in `brew` in tests, not against the
   guarded one.
-- No LICENSE file yet.
 
 ## Updating
 
@@ -220,3 +219,8 @@ nix flake check
 ```
 
 Compare the new hash with the release's `SHA256SUMS` before committing.
+
+## License
+
+The Nix code in this repository is MIT licensed (see [LICENSE](LICENSE)).
+Automic Vault itself keeps its own license, Apache-2.0.
