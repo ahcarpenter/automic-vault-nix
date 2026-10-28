@@ -222,5 +222,5 @@ Compare the new hash with the release's `SHA256SUMS` before committing.
 
 ## License
 
-The Nix code in this repository is MIT licensed (see [LICENSE](LICENSE)).
-Automic Vault itself keeps its own license, Apache-2.0.
+The Nix code in this repository is licensed under the Apache License 2.0 (see
+[LICENSE](LICENSE)). Automic Vault itself carries its own Apache-2.0 license.
