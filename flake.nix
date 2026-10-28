@@ -35,9 +35,9 @@
           { lib, pkgs, ... }:
           {
             imports = [ ./modules/darwin/automic-vault ];
-            programs.automic-vault.package =
-              lib.mkDefault
-                self.packages.${pkgs.stdenv.hostPlatform.system}.automic-vault;
+            programs.automic-vault.package = lib.mkDefault (
+              pkgs.callPackage ./pkgs/by-name/au/automic-vault/package.nix { }
+            );
           };
         default = self.darwinModules.automic-vault;
       };

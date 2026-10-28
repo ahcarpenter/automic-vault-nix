@@ -9,17 +9,16 @@
 let
   inherit (pkgs) lib;
 
-  evalDarwin =
+  evalDarwinWithout =
     modules:
     (nix-darwin.lib.darwinSystem {
       inherit pkgs;
-      modules = [
-        module
-        { system.stateVersion = 6; }
-      ]
-      ++ modules;
+      modules = [ { system.stateVersion = 6; } ] ++ modules;
     }).config;
 
+  evalDarwin = modules: evalDarwinWithout ([ module ] ++ modules);
+
+  baseline = evalDarwinWithout [ ];
   plain = evalDarwin [ ];
   enabled = evalDarwin [ { programs.automic-vault.enable = true; } ];
   duplicated = evalDarwin [
@@ -61,8 +60,12 @@ let
       (installTargets plain == [ ])
     ]
     [
-      "plain: nothing is added to activation"
-      (!lib.hasInfix "Automic Vault" (applications plain))
+      "plain: activation is the same as without the module"
+      (applications plain == applications baseline)
+    ]
+    [
+      "plain: the checks are the same as without the module"
+      (plain.system.checks.text == baseline.system.checks.text)
     ]
 
     # enable installs the app and the CLI, and nothing else.
