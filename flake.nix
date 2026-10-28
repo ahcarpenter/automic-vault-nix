@@ -4,10 +4,9 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
-    # Only the checks use these two, to evaluate the nix-darwin module.
+    # Only the checks use this, to evaluate the nix-darwin module.
     nix-darwin.url = "github:nix-darwin/nix-darwin/master";
     nix-darwin.inputs.nixpkgs.follows = "nixpkgs";
-    nix-homebrew.url = "github:zhaofengli/nix-homebrew";
   };
 
   outputs =
@@ -15,7 +14,6 @@
       self,
       nixpkgs,
       nix-darwin,
-      nix-homebrew,
     }:
     let
       inherit (nixpkgs) lib;
@@ -47,7 +45,7 @@
       checks = forAllSystems (
         pkgs:
         import ./tests {
-          inherit pkgs nix-darwin nix-homebrew;
+          inherit pkgs nix-darwin;
           automic-vault = self.packages.${pkgs.stdenv.hostPlatform.system}.automic-vault;
           module = self.darwinModules.default;
         }

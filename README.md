@@ -17,8 +17,7 @@ It provides:
   with little change.
 - `overlays.default`, which adds `automic-vault` to nixpkgs.
 - `darwinModules.default`: `programs.automic-vault`, which installs the app
-  and the CLI where Automic Vault expects them and can run a Mac whose
-  Homebrew is hardened by `av harden brew`.
+  and the CLI where Automic Vault expects them.
 
 ## Why the signed release, not a build from source
 
@@ -61,9 +60,8 @@ the module is for.
     nix-darwin.inputs.nixpkgs.follows = "nixpkgs";
     automic-vault.url = "github:ahcarpenter/automic-vault-nix";
     automic-vault.inputs.nixpkgs.follows = "nixpkgs";
+    # Only the checks use nix-darwin.
     automic-vault.inputs.nix-darwin.follows = "nix-darwin";
-    # Only the checks use nix-darwin and nix-homebrew; with nix-homebrew,
-    # also add: automic-vault.inputs.nix-homebrew.follows = "nix-homebrew";
   };
 
   outputs = { nix-darwin, automic-vault, ... }: {
@@ -86,55 +84,17 @@ the module is for.
   left alone. A different one is replaced: a verified copy is staged next to
   it and swapped in with a rename.
 - installs `/usr/local/bin/av` the way the app's own "Install av CLI" does.
-- puts `/usr/local/bin` first in `PATH`, as Automic Vault asks for the tools
-  it hardens there.
 
 Do not also add the package to `environment.systemPackages`: that would put a
 second copy of the app in `/Applications/Nix Apps`. The module warns if you do.
 
-### Hardened Homebrew
-
-Once you have run `av harden brew`, set:
-
-```nix
-{
-  programs.automic-vault.homebrew.hardened = true;
-}
-```
-
-This only declares that Homebrew is hardened; it never hardens it. Keep it
-`false` on a Mac where `av harden brew` has not run, including a fresh one:
-the switch stops if there is no `automic` user or `vault` group. When it is
-`true`:
-
-- [nix-homebrew](https://github.com/zhaofengli/nix-homebrew), if imported,
-  sets up the Homebrew prefix as Automic Vault's `automic` user and `vault`
-  group from the start, so nothing changes ownership afterwards. Its
-  `brew shellenv` shell hooks are turned off. Its `/usr/local` prefix, which
-  `enableRosetta` or an Intel Mac turns on, must be off: it would put
-  Homebrew's `brew` where the guarded one lives and hand `/usr/local/bin`,
-  which must stay root-owned, to `automic:vault`, so evaluation fails if both
-  are set.
-- nix-darwin's own Homebrew module is turned off rather than overridden,
-  because hardened Homebrew refuses `brew bundle` and root.
-- A `brew-sync` command installs whatever is missing from `homebrew.taps`,
-  `homebrew.brews` and `homebrew.casks` through the guarded
-  `/usr/local/bin/brew`, one approval per command, two for trusted items. Run
-  it as yourself after each switch:
-
-  ```sh
-  sudo darwin-rebuild switch --flake .#mac && brew-sync
-  ```
-
-  It installs by name, trusting taps and fully qualified formulae and casks
-  where nix-darwin would. It never upgrades or removes anything. A denied or
-  failed item prints a warning and the rest carry on.
-- `/usr/local/bin`, then Homebrew's `bin` and `sbin`, come first in `PATH`,
-  and `HOMEBREW_PREFIX`, `HOMEBREW_CELLAR` and `INFOPATH` are set, in place of
-  `brew shellenv`.
-
-`homebrew.masApps`, `vscode`, `goPackages`, `cargoPackages` and `extraConfig`
-are not installed when hardened; the module warns if any are set.
+The module leaves `PATH` alone. nix-darwin's default `PATH` already has
+`/usr/local/bin`, after the Nix profiles, so `av` finds the installed copy.
+Tools you harden with `av harden` also go in `/usr/local/bin`, and Automic
+Vault needs that directory ahead of any other copy of the same tool;
+`av doctor <tool>` reports one that is shadowed. If you also install such a
+tool through Nix or Homebrew, order `PATH` yourself, for example with
+`environment.systemPath = lib.mkBefore [ "/usr/local/bin" ];`.
 
 ## nix profile
 
@@ -170,17 +130,12 @@ not update that copy; the nix-darwin module does.
   install verifies; a second is a no-op; the 4.20.1 release is upgraded in place;
   anything that is not Automic Vault is left alone. An unsigned source, a CLI
   directory that is not root-owned and a CLI that is not `av` are all refused.
-- `brew-sync`: against a sample prefix and a stand-in `brew`. It covers install
-  order, trust, clone URLs, refusals and an up-to-date run.
-- `check-hardened`: the switch-time check for the `automic` user and `vault`
-  group, run with `root` and `wheel`, which every Mac has, and with names no
-  Mac has.
-- `module`: the nix-darwin module evaluated with it off, enabled and hardened,
-  with and without nix-homebrew. It checks what each sets, that each system
-  evaluates, and that the snippets it adds to activation pass `shellcheck`.
+- `module`: the nix-darwin module evaluated off and enabled. It checks what
+  each sets, that each system evaluates, and that the snippets it adds to
+  activation pass `shellcheck`.
 - `lint`: `nixfmt` and `shellcheck`.
 
-The checks call Apple's `/usr/bin/codesign` and `/usr/bin/dscl`, so they need the Nix sandbox off
+The checks call Apple's `/usr/bin/codesign`, so they need the Nix sandbox off
 or `relaxed` (the default on macOS is off).
 
 Checked by hand on a Mac running Automic Vault 4.20.2:
@@ -208,8 +163,6 @@ Checked by hand on a Mac running Automic Vault 4.20.2:
 - **Replacing the app needs App Management.** The terminal you run
   `darwin-rebuild` from needs permission under System Settings > Privacy &
   Security > App Management, as nix-darwin needs for `/Applications/Nix Apps`.
-- `brew-sync` has only run against a stand-in `brew` in tests, not against the
-  guarded one.
 
 ## Updating
 
