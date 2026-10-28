@@ -45,7 +45,8 @@ Whatever is already at the app path must be Automic Vault (any version, for
 example a manual install), or the switch stops before changing anything; it is
 replaced when it differs from the packaged one. Every switch resets the app to
 the packaged version, so update the flake input instead of using the app's own
-updater.
+updater. After an upgrade, quit and reopen Automic Vault: the running menu bar
+app keeps the old version until it restarts.
 
 > [!IMPORTANT]
 > Do not also add the package to `environment.systemPackages`. That puts a
