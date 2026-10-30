@@ -9,11 +9,11 @@
 
 stdenvNoCC.mkDerivation (finalAttrs: {
   pname = "automic-vault";
-  version = "4.21.1";
+  version = "4.21.2";
 
   src = fetchurl {
     url = "https://github.com/automic-vault/automic-vault/releases/download/${finalAttrs.version}/Automic-Vault-${finalAttrs.version}.dmg";
-    hash = "sha256-vYL5MVewTE/UUq1Z8j+8Laemr9tSmh4FSosdId3ZCAY=";
+    hash = "sha256-AvgaYPYi0MrqSz/KDu9HjWqHPvrYU57LGyIdJa2zw/A=";
   };
 
   nativeBuildInputs = [ undmg ];
