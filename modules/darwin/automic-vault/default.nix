@@ -30,8 +30,9 @@ in
         at {file}`/Applications/Automic Vault.app` and a root-owned copy of its
         {command}`av` CLI at {file}`/usr/local/bin/av`, as the app's own
         "Install av CLI" puts it. An app already at that path must be Automic
-        Vault (any version); it is replaced when it differs from this
-        package's.
+        Vault (any version). Automic Vault updates itself, so this package's
+        version is a minimum: an older app or {command}`av` is replaced, but a
+        newer one stays, and each switch warns that the package is behind.
 
         Do not also add the package to
         {option}`environment.systemPackages`, which would put a second copy of
@@ -47,7 +48,7 @@ in
       readOnly = true;
       description = ''
         What the checks and activation run the installer on, each as its
-        kind, source and destination.
+        kind, the packaged app and the paths it installs to.
       '';
     };
   };
@@ -62,7 +63,8 @@ in
         ]
         [
           "cli"
-          "${sourceApp}/Contents/MacOS/av"
+          sourceApp
+          appPath
           cliPath
         ]
       ];

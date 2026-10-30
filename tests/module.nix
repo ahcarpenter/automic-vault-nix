@@ -47,7 +47,8 @@ let
       ]
       [
         "cli"
-        "${app}/Contents/MacOS/av"
+        app
+        "/Applications/Automic Vault.app"
         "/usr/local/bin/av"
       ]
     ];
