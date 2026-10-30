@@ -42,11 +42,12 @@ itself.
 `programs.automic-vault.enable` copies the app to `/Applications/Automic Vault.app`
 and installs `/usr/local/bin/av` the way the app's own "Install av CLI" does.
 Whatever is already at the app path must be Automic Vault (any version, for
-example a manual install), or the switch stops before changing anything; it is
-replaced when it differs from the packaged one. Every switch resets the app to
-the packaged version, so update the flake input instead of using the app's own
-updater. After an upgrade, quit and reopen Automic Vault: the running menu bar
-app keeps the old version until it restarts.
+example a manual install), or the switch stops before changing anything. The
+packaged version is a minimum: the module replaces an older app or `av` but
+never downgrades a newer one, such as the app's own updater installs. It keeps
+that copy and warns on each switch that the package is behind. After an upgrade,
+quit and reopen Automic Vault: the running menu bar app keeps the old version
+until it restarts.
 
 > [!IMPORTANT]
 > Do not also add the package to `environment.systemPackages`. That puts a

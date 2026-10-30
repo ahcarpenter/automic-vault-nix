@@ -47,7 +47,7 @@ let
       ]
       [
         "cli"
-        "${app}/Contents/MacOS/av"
+        app
         "/usr/local/bin/av"
       ]
     ];
