@@ -48,7 +48,6 @@ let
       [
         "cli"
         app
-        "/Applications/Automic Vault.app"
         "/usr/local/bin/av"
       ]
     ];

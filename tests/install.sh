@@ -33,7 +33,8 @@ version() {
 }
 
 # Runs the installer as root would, with the test user's files and
-# directories counting as root's.
+# directories counting as root's. With $av_reports set, av is taken to be that
+# version, for an av older than <previous app>.
 as_root() {
   (
     # shellcheck source=/dev/null
@@ -43,6 +44,9 @@ as_root() {
       protected() { true; }
       installed_as_root() { [[ -f $1 && ! -L $1 && $(/usr/bin/stat -f %Lp "$1") == 755 ]]; }
       install_as_root() { /usr/bin/install -m 0755 "$1" "$2"; }
+      if [[ -n ${av_reports:-} ]]; then
+        cli_version() { echo "$av_reports"; }
+      fi
     }
     main "$@"
   )
@@ -107,14 +111,14 @@ fi
 grep -q "is not a validly signed Automic Vault app" "$work/err" || fail "unexpected refusal: $(cat "$work/err")"
 
 # The CLI is refused in a directory that is not root-owned.
-if "$installer" check cli "$source" "$app" "$work/bin/av" 2>"$work/err"; then
+if "$installer" check cli "$source" "$work/bin/av" 2>"$work/err"; then
   fail "accepted a CLI directory that is not root-owned"
 fi
 grep -q "must be a root-owned directory" "$work/err" || fail "unexpected refusal: $(cat "$work/err")"
 [[ ! -e $work/bin ]] || fail "check created the CLI directory"
 
 # The CLI of an app that is not Automic Vault is refused.
-if "$installer" check cli "$other" "$app" "$work/bin/av" 2>"$work/err"; then
+if "$installer" check cli "$other" "$work/bin/av" 2>"$work/err"; then
   fail "accepted the CLI of an app that is not Automic Vault"
 fi
 grep -q "is not a validly signed Automic Vault app" "$work/err" || fail "unexpected refusal: $(cat "$work/err")"
@@ -128,11 +132,7 @@ if ! (
   fail "versions do not compare number by number"
 fi
 
-# From here on, no app is installed unless a case says so.
-apps="$work/cli/Applications"
-app="$apps/Automic Vault.app"
 cli="$work/cli/bin/av"
-mkdir -p "$apps"
 
 put_cli() {
   mkdir -p "$(dirname "$cli")"
@@ -141,31 +141,31 @@ put_cli() {
 }
 
 # A check changes nothing, and a first install puts the packaged av in place.
-as_root check cli "$source" "$app" "$cli" 2>"$work/err" || fail "check refused a missing CLI: $(cat "$work/err")"
+as_root check cli "$source" "$cli" 2>"$work/err" || fail "check refused a missing CLI: $(cat "$work/err")"
 [[ ! -e $work/cli/bin ]] || fail "check created the CLI directory"
-as_root install cli "$source" "$app" "$cli" 2>"$work/err" || fail "a first CLI install failed: $(cat "$work/err")"
+as_root install cli "$source" "$cli" 2>"$work/err" || fail "a first CLI install failed: $(cat "$work/err")"
 cmp -s "$source/Contents/MacOS/av" "$cli" || fail "a first CLI install did not install the packaged av"
 [[ $(/usr/bin/stat -f %Lp "$cli") == 755 ]] || fail "the CLI has mode $(/usr/bin/stat -f %Lp "$cli"), not 755"
 [[ $(ls -A "$work/cli/bin") == av ]] || fail "a CLI install left behind: $(ls -A "$work/cli/bin")"
 
 # Installing the same CLI again leaves it alone, without a warning.
 inode=$(/usr/bin/stat -f %i "$cli")
-as_root check cli "$source" "$app" "$cli" 2>"$work/err" || fail "check refused an up-to-date CLI: $(cat "$work/err")"
-as_root install cli "$source" "$app" "$cli" 2>>"$work/err" || fail "a repeated CLI install failed: $(cat "$work/err")"
+as_root check cli "$source" "$cli" 2>"$work/err" || fail "check refused an up-to-date CLI: $(cat "$work/err")"
+as_root install cli "$source" "$cli" 2>>"$work/err" || fail "a repeated CLI install failed: $(cat "$work/err")"
 [[ $(/usr/bin/stat -f %i "$cli") == "$inode" ]] || fail "an up-to-date CLI was replaced"
 [[ ! -s $work/err ]] || fail "an up-to-date CLI printed: $(cat "$work/err")"
 
 # An older av is replaced.
 put_cli "$previous/Contents/MacOS/av"
-as_root install cli "$source" "$app" "$cli" 2>"$work/err" || fail "a CLI upgrade failed: $(cat "$work/err")"
+as_root install cli "$source" "$cli" 2>"$work/err" || fail "a CLI upgrade failed: $(cat "$work/err")"
 cmp -s "$source/Contents/MacOS/av" "$cli" || fail "a CLI upgrade did not install the packaged av"
 
 # A newer av stays, and check warns that the package is behind.
 inode=$(/usr/bin/stat -f %i "$cli")
-as_root check cli "$previous" "$app" "$cli" 2>"$work/err" || fail "check refused a newer CLI: $(cat "$work/err")"
+as_root check cli "$previous" "$cli" 2>"$work/err" || fail "check refused a newer CLI: $(cat "$work/err")"
 grep -qF "the package is behind: leaving $cli at $(version "$source"), newer than the packaged $(version "$previous")" "$work/err" ||
   fail "check did not warn about a newer CLI: $(cat "$work/err")"
-as_root install cli "$previous" "$app" "$cli" 2>"$work/err" || fail "install refused a newer CLI: $(cat "$work/err")"
+as_root install cli "$previous" "$cli" 2>"$work/err" || fail "install refused a newer CLI: $(cat "$work/err")"
 [[ $(/usr/bin/stat -f %i "$cli") == "$inode" ]] || fail "a newer CLI was replaced"
 [[ ! -s $work/err ]] || fail "keeping a newer CLI printed: $(cat "$work/err")"
 
@@ -176,23 +176,36 @@ touch "$work/ran"
 echo "av 99.0"
 EOF
 put_cli "$work/fake-av"
-as_root install cli "$source" "$app" "$cli" 2>"$work/err" || fail "replacing an unsigned CLI failed: $(cat "$work/err")"
+as_root install cli "$source" "$cli" 2>"$work/err" || fail "replacing an unsigned CLI failed: $(cat "$work/err")"
 cmp -s "$source/Contents/MacOS/av" "$cli" || fail "an unsigned CLI was not replaced"
 [[ ! -e $work/ran ]] || fail "ran a CLI that is not validly signed"
 
-# Next to a newer app, which stays, av comes from that app, never the older package.
-/usr/bin/ditto "$source" "$app"
-/bin/chmod -R u+w "$app"
-for start in "$previous/Contents/MacOS/av" ""; do
-  if [[ -n $start ]]; then put_cli "$start"; else rm -f "$cli"; fi
-  as_root check cli "$previous" "$app" "$cli" 2>"$work/err" || fail "check refused a CLI next to a newer app: $(cat "$work/err")"
-  [[ ! -s $work/err ]] || fail "check printed for a CLI it will replace: $(cat "$work/err")"
-  as_root install cli "$previous" "$app" "$cli" 2>"$work/err" || fail "a CLI install next to a newer app failed: $(cat "$work/err")"
-  cmp -s "$app/Contents/MacOS/av" "$cli" || fail "the CLI next to a newer app is not that app's av"
-  as_root check cli "$previous" "$app" "$cli" 2>"$work/err" || fail "check refused the newer app's CLI: $(cat "$work/err")"
-  grep -qF "the package is behind: leaving $cli at $(version "$app")" "$work/err" ||
-    fail "check did not warn about the newer app's CLI: $(cat "$work/err")"
-done
+# A newer app left in place does not change the av installed.
+"$installer" install app "$previous" "$app" 2>"$work/err" || fail "install refused a newer app: $(cat "$work/err")"
+[[ $(version "$app") == "$(version "$source")" ]] || fail "a newer app was not left in place"
+
+# With it there, the packaged av still installs when av is missing.
+rm -f "$cli"
+as_root check cli "$previous" "$cli" 2>"$work/err" || fail "check refused a missing CLI next to a newer app: $(cat "$work/err")"
+[[ ! -s $work/err ]] || fail "check printed for a CLI it will install: $(cat "$work/err")"
+as_root install cli "$previous" "$cli" 2>"$work/err" || fail "a CLI install next to a newer app failed: $(cat "$work/err")"
+cmp -s "$previous/Contents/MacOS/av" "$cli" || fail "a missing CLI next to a newer app did not get the packaged av"
+
+# Or when av is older.
+put_cli "$source/Contents/MacOS/av"
+av_reports=0.1 as_root check cli "$previous" "$cli" 2>"$work/err" || fail "check refused an older CLI next to a newer app: $(cat "$work/err")"
+[[ ! -s $work/err ]] || fail "check printed for a CLI it will replace: $(cat "$work/err")"
+av_reports=0.1 as_root install cli "$previous" "$cli" 2>"$work/err" || fail "a CLI upgrade next to a newer app failed: $(cat "$work/err")"
+cmp -s "$previous/Contents/MacOS/av" "$cli" || fail "an older CLI next to a newer app did not get the packaged av"
+
+# And a newer av still stays, with the warning.
+put_cli "$source/Contents/MacOS/av"
+inode=$(/usr/bin/stat -f %i "$cli")
+as_root check cli "$previous" "$cli" 2>"$work/err" || fail "check refused a newer CLI next to a newer app: $(cat "$work/err")"
+grep -qF "the package is behind: leaving $cli at $(version "$source"), newer than the packaged $(version "$previous")" "$work/err" ||
+  fail "check did not warn about a newer CLI next to a newer app: $(cat "$work/err")"
+as_root install cli "$previous" "$cli" 2>"$work/err" || fail "install refused a newer CLI next to a newer app: $(cat "$work/err")"
+[[ $(/usr/bin/stat -f %i "$cli") == "$inode" ]] || fail "a newer CLI next to a newer app was replaced"
 
 if [[ $failures -gt 0 ]]; then
   echo "$failures failure(s)" >&2

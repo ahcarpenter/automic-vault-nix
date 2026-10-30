@@ -48,7 +48,7 @@ in
       readOnly = true;
       description = ''
         What the checks and activation run the installer on, each as its
-        kind, the packaged app and the paths it installs to.
+        kind, the packaged app and the path it installs to.
       '';
     };
   };
@@ -64,7 +64,6 @@ in
         [
           "cli"
           sourceApp
-          appPath
           cliPath
         ]
       ];

@@ -2,7 +2,7 @@
 # Install Automic Vault where its own code expects it.
 #
 # Usage: automic-vault-install check|install app <source app> <app>
-#        automic-vault-install check|install cli <source app> <app> <cli>
+#        automic-vault-install check|install cli <source app> <cli>
 #
 # `av harden brew` copies its brew stub out of /Applications/Automic Vault.app,
 # and the app, `av doctor` and every hardened tool run /usr/local/bin/av, which
@@ -16,10 +16,9 @@
 # (any version), or nothing is replaced. `install cli` installs the av from
 # <source app> at <cli> the way the app's own "Install av CLI" does.
 #
-# Neither downgrades, as Automic Vault updates itself. A validly signed <app>
-# newer than <source app> stays, and the av for <cli> then comes from it
-# instead; a validly signed <cli> newer than the av it would get stays too.
-# `check` warns that the package is behind for each newer copy it leaves.
+# Neither downgrades, as Automic Vault updates itself: a validly signed <app> or
+# <cli> newer than <source app> stays, each judged on its own, and `check` warns
+# that the package is behind for each newer copy it leaves.
 set -euo pipefail
 
 team="ZU76A67LGU"
@@ -33,8 +32,7 @@ app=""
 cli=""
 packaged=""  # <source app>'s version
 installed="" # <app>'s version, when it is a validly signed Automic Vault
-source=""    # the av that belongs at <cli>
-wanted=""    # its version
+source=""    # <source app>'s av
 kept=""      # the version left in place, when `install` has nothing to do
 
 fail() {
@@ -181,28 +179,18 @@ check_cli() {
     fail "$cli is a directory or a symlink; remove it so the av CLI can be installed there"
   fi
 
-  # The av of the app that `install app` leaves at <app>.
-  if app_genuine && newer "$installed" "$packaged"; then
-    source="$app/Contents/MacOS/av"
-    wanted=$installed
-  else
-    source="$source_app/Contents/MacOS/av"
-    wanted=$packaged
-  fi
   /usr/bin/codesign --verify --strict -R "=$cli_requirement" "$source" ||
     fail "$source is not a validly signed av CLI"
 
-  # <cli> stays when it is that av already, or a validly signed av newer still.
+  # <cli> stays when it is the packaged av already, or a validly signed av newer still.
   if installed_as_root "$cli" && /usr/bin/cmp -s "$source" "$cli"; then
-    kept=$wanted
+    kept=$packaged
   elif installed_as_root "$cli" && /usr/bin/codesign --verify --strict -R "=$cli_requirement" "$cli" 2>/dev/null; then
     version=$(cli_version) || fail "could not read a version number from $cli --version"
-    if newer "$version" "$wanted"; then
+    if newer "$version" "$packaged"; then
       kept=$version
+      behind "$cli" "$version"
     fi
-  fi
-  if [[ -n $kept ]] && newer "$kept" "$packaged"; then
-    behind "$cli" "$kept"
   fi
 }
 
@@ -238,21 +226,24 @@ install_cli() {
   /usr/bin/codesign --verify --strict --all-architectures -R "=$cli_requirement" "$stage/av" ||
     fail "the copy of $source in $stage failed its signature check"
   /bin/mv -f "$stage/av" "$cli"
-  say "installed $cli $wanted"
+  say "installed $cli $packaged"
 }
 
 main() {
-  if [[ $# -lt 4 ]] || [[ $1 != check && $1 != install ]] ||
-    ! [[ $2 == app && $# -eq 4 || $2 == cli && $# -eq 5 ]]; then
+  if [[ $# -ne 4 ]] || [[ $1 != check && $1 != install ]] || [[ $2 != app && $2 != cli ]]; then
     echo "usage: automic-vault-install check|install app <source app> <app>" >&2
-    echo "       automic-vault-install check|install cli <source app> <app> <cli>" >&2
+    echo "       automic-vault-install check|install cli <source app> <cli>" >&2
     exit 2
   fi
   mode="$1"
   kind="$2"
   source_app="$3"
-  app="$4"
-  cli="${5:-}"
+  source="$source_app/Contents/MacOS/av"
+  if [[ $kind == app ]]; then
+    app="$4"
+  else
+    cli="$4"
+  fi
   trap cleanup EXIT
 
   /usr/bin/codesign --verify --deep --strict -R "=$app_requirement" "$source_app" ||
